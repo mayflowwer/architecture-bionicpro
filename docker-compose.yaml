@@ -87,7 +87,7 @@ services:
     container_name: airflow_db
     image: postgres:16.0
     volumes:
-      - ./airflow/dags/sql/init-db.sql:/docker-entrypoint-initdb.d/db.sql
+      - ./airflow/dags/sql/user_report_create.sh:/docker-entrypoint-initdb.d/db.sh
       - airflow_db_data:/var/lib/postgresql/data
     environment:
       POSTGRES_USER: airflow

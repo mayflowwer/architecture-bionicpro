@@ -4,9 +4,6 @@ from typing import List
 import asyncpg
 
 
-access_token = {"user_id": 1}
-
-
 class UserReport(BaseModel):
     user_id: int
     device_id: int
@@ -22,15 +19,11 @@ router = APIRouter()
 
 @router.get("/reports/{user_id}", response_model=List[UserReport])
 async def get_report_by_user(user_id: int):
-    if user_id != access_token["user_id"]:
-        raise HTTPException(status_code=403, detail="Forbidden")
 
     conn = await get_connection()
     try:
-        rows = await conn.fetch(
-            "SELECT user_id, device_id, action_count FROM user_report WHERE user_id = $1",
-            user_id
-        )
+        stm = f"SELECT user_id, device_id, action_count FROM user_report WHERE user_id ='{str(user_id)}'"
+        rows = await conn.fetch(stm)
     finally:
         await conn.close()
 
