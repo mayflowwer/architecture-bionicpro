@@ -1,0 +1,101 @@
+@startuml
+
+actor User
+
+box "Клиенты" #F8F8F8
+    participant "Мобильное приложение" as Mobile
+    participant "BFF\n(Сайт / CRM)" as BFF
+end box
+
+participant "Keycloak\n(SSO брокер)" as KC
+
+box "Локальные IdP (по гео)"
+    participant "IdP RU\nbionicpro.com\n[LDAP]" as IdPRU
+    participant "IdP DE\nde.bionicpro.com\n[SAML/ADFS]" as IdPDE
+    participant "IdP SG\nsg.bionicpro.com\n[OIDC]" as IdPSG
+end box
+
+== 1. Инициация входа ==
+
+alt Мобильный клиент (PKCE)
+    Mobile -> KC : GET /auth\n?response_type=code\n&code_challenge=S256\n&code_challenge_method=SHA256
+else Веб клиент (через BFF)
+    User -> BFF : GET /resource
+    BFF -> BFF : токена нет
+    BFF --> User : 302 redirect\n/auth?client_id=bionicpro\n&state=xyz
+    User -> KC : GET /auth
+end
+
+== 2. Роутинг по домену email ==
+
+KC --> User : форма ввода email
+User -> KC : email
+
+KC -> KC : парсим домен email
+
+alt bionicpro.com (RU — дефолт)
+    KC --> User : redirect → IdP RU
+    User -> IdPRU : credentials
+    IdPRU -> IdPRU : проверка\nLDAP / Битрикс БД
+    IdPRU --> KC : auth code [LDAP]
+
+else de.bionicpro.com
+    KC --> User : redirect → IdP DE
+    User -> IdPDE : credentials
+    IdPDE -> IdPDE : проверка\nADFS
+    IdPDE --> KC : SAML assertion
+
+else sg.bionicpro.com
+    KC --> User : redirect → IdP SG
+    User -> IdPSG : credentials
+    IdPSG -> IdPSG : проверка\nOIDC provider
+    IdPSG --> KC : id_token [OIDC]
+
+else домен неизвестен
+    KC --> User : ошибка\n"Организация не найдена"
+
+end
+
+== 3. Token Exchange внутри Keycloak ==
+
+KC -> KC : получаем токен от IdP\n(LDAP / SAML / OIDC)
+note over KC
+  IdP токены остаются
+  внутри Keycloak.
+  На клиент не уходят.
+end note
+KC -> KC : Token Exchange\nIdP token → BionicPRO token\n(единый формат для всех гео)
+
+== 4. Выдача токена клиенту ==
+
+alt Мобильный клиент (PKCE)
+    KC --> Mobile : BionicPRO access_token\n+ refresh_token
+    Mobile -> Mobile : сохраняем в\nKeychain (iOS)\nKeystore (Android)
+    note right
+        IdP токен не передаётся.
+        Только BionicPRO токен.
+    end note
+
+else Веб клиент (через BFF)
+    KC --> BFF : BionicPRO access_token\n+ refresh_token
+    BFF -> BFF : сохраняем токены\nна сервере
+    BFF --> User : Set-Cookie: session=...\n(HttpOnly, Secure)
+    note right
+        Браузер получает только
+        HttpOnly cookie.
+        Токены не видны в JS.
+    end note
+
+end
+
+== 5. Запрос ресурса ==
+
+alt Мобильный клиент
+    Mobile -> KC : GET /resource\nAuthorization: Bearer access_token
+else Веб клиент
+    User -> BFF : GET /resource\nCookie: session=...
+    BFF -> BFF : достаём access_token\nиз серверной сессии
+    BFF -> KC : GET /resource\nAuthorization: Bearer access_token
+end
+
+@enduml
