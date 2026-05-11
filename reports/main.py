@@ -2,6 +2,12 @@ from fastapi import FastAPI, APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List
 import asyncpg
+from fastapi.middleware.cors import CORSMiddleware
+
+
+origins = [
+    "http://localhost:3000"
+]
 
 
 class UserReport(BaseModel):
@@ -34,6 +40,14 @@ async def get_report_by_user(user_id: int):
 
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(router)
 
 if __name__ == "__main__":

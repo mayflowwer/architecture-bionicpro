@@ -78,12 +78,46 @@ def load_to_dwh(**context):
     )
     cursor = conn.cursor()
 
-    cursor.executemany("""
-        INSERT INTO user_report (user_id, device_id, action_count)
-        VALUES (%(user_id)s, %(device_id)s, %(action_count)s)
-        ON CONFLICT (user_id, device_id)
-        DO UPDATE SET action_count = user_report.action_count + EXCLUDED.action_count
-    """, rows)
+    for row in rows:
+        if isinstance(row, dict):
+            user_id = row.get("user_id", "")
+            device_id = row.get("device_id", "")
+
+            query = f"""
+            SELECT action_count 
+            FROM user_report
+            WHERE user_id = '{str(user_id)}' AND device_id = '{str(device_id)}'
+            """
+            cursor.execute(query=query)
+            res = cursor.fetchone()
+            
+            if res:
+                cursor.execute(
+                f"""
+                UPDATE user_report
+                SET action_count = {str(row.get("action_count", res[2]))}
+                WHERE user_id = '{str(user_id)}' AND device_id = '{str(device_id)}'
+                """
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO user_report (user_id, device_id, action_count)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (
+                        str(row.get("user_id")),
+                        str(row.get("device_id")),
+                        str(row.get("action_count"))
+                    )
+                )
+
+    # cursor.executemany("""
+    #     INSERT INTO user_report (user_id, device_id, action_count)
+    #     VALUES (%(user_id)s, %(device_id)s, %(action_count)s)
+    #     ON CONFLICT (user_id, device_id)
+    #     DO UPDATE SET action_count = user_report.action_count + EXCLUDED.action_count
+    # """, rows)
 
     conn.commit()
     cursor.close()
@@ -104,3 +138,8 @@ with DAG(
     t4 = PythonOperator(task_id="load_to_dwh",        python_callable=load_to_dwh)
 
     [t1, t2] >> t3 >> t4
+
+
+if __name__ == "__main__":
+
+    load_to_dwh()
